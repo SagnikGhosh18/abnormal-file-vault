@@ -1,19 +1,43 @@
 from django.shortcuts import render
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db.models import Q
+from django_filters import rest_framework as django_filters
 import os
 from .models import File
 from .serializers import FileSerializer
 
 # Create your views here.
 
+class FileFilter(django_filters.FilterSet):
+    filename = django_filters.CharFilter(field_name='original_filename', lookup_expr='icontains')
+    file_type = django_filters.CharFilter(field_name='file_type', lookup_expr='iexact')
+    is_duplicate = django_filters.BooleanFilter(field_name='is_duplicate')
+    min_size = django_filters.NumberFilter(field_name='size', lookup_expr='gte')
+    max_size = django_filters.NumberFilter(field_name='size', lookup_expr='lte')
+    uploaded_after = django_filters.DateTimeFilter(field_name='uploaded_at', lookup_expr='gte')
+    uploaded_before = django_filters.DateTimeFilter(field_name='uploaded_at', lookup_expr='lte')
+    
+    class Meta:
+        model = File
+        fields = ['filename', 'file_type', 'is_duplicate', 'min_size', 'max_size', 
+                 'uploaded_after', 'uploaded_before']
+
 class FileViewSet(viewsets.ModelViewSet):
     queryset = File.objects.all()
     serializer_class = FileSerializer
+    filter_backends = [
+        django_filters.DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter
+    ]
+    filterset_class = FileFilter
+    search_fields = ['original_filename']
+    ordering_fields = ['uploaded_at', 'size', 'original_filename']
+    ordering = ['-uploaded_at']  # default ordering
 
     def create(self, request, *args, **kwargs):
         file_obj = request.FILES.get('file')
