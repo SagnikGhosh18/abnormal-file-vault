@@ -1,5 +1,13 @@
-import React from 'react';
-import { Box, TextField, Select, MenuItem, FormControl, InputLabel, Stack } from '@mui/material';
+import React from "react";
+import {
+  Box,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Stack,
+} from "@mui/material";
 
 interface FileFiltersProps {
   filters: {
@@ -7,22 +15,27 @@ interface FileFiltersProps {
     fileType: string;
     isDuplicate: string;
     sortBy: string;
-    sortOrder: 'asc' | 'desc';
+    sortOrder: "asc" | "desc";
   };
   onFilterChange: (name: string, value: string) => void;
 }
 
-const FileFilters: React.FC<FileFiltersProps> = ({ filters, onFilterChange }) => {
+const FileFilters: React.FC<FileFiltersProps> = ({
+  filters,
+  onFilterChange,
+}) => {
   return (
     <Box sx={{ mb: 3 }}>
-      <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }} sx={{ mb: 2 }}>
+      <Stack spacing={2} direction={{ xs: "column", sm: "row" }} sx={{ mb: 2 }}>
         <TextField
           label="Search by filename"
           variant="outlined"
           value={filters.search}
-          onChange={(e) => onFilterChange('search', e.target.value)}
+          onChange={(e) => onFilterChange("search", e.target.value)}
           size="small"
           sx={{ minWidth: 200 }}
+          autoComplete="off"
+          placeholder="Type to search..."
         />
 
         <FormControl size="small" sx={{ minWidth: 150 }}>
@@ -30,7 +43,7 @@ const FileFilters: React.FC<FileFiltersProps> = ({ filters, onFilterChange }) =>
           <Select
             value={filters.fileType}
             label="File Type"
-            onChange={(e) => onFilterChange('fileType', e.target.value)}
+            onChange={(e) => onFilterChange("fileType", e.target.value)}
           >
             <MenuItem value="">All</MenuItem>
             <MenuItem value="application/pdf">PDF</MenuItem>
@@ -45,7 +58,7 @@ const FileFilters: React.FC<FileFiltersProps> = ({ filters, onFilterChange }) =>
           <Select
             value={filters.isDuplicate}
             label="Duplicate Status"
-            onChange={(e) => onFilterChange('isDuplicate', e.target.value)}
+            onChange={(e) => onFilterChange("isDuplicate", e.target.value)}
           >
             <MenuItem value="">All</MenuItem>
             <MenuItem value="true">Duplicates</MenuItem>
@@ -58,7 +71,7 @@ const FileFilters: React.FC<FileFiltersProps> = ({ filters, onFilterChange }) =>
           <Select
             value={filters.sortBy}
             label="Sort By"
-            onChange={(e) => onFilterChange('sortBy', e.target.value)}
+            onChange={(e) => onFilterChange("sortBy", e.target.value)}
           >
             <MenuItem value="uploaded_at">Date</MenuItem>
             <MenuItem value="size">Size</MenuItem>
@@ -71,7 +84,9 @@ const FileFilters: React.FC<FileFiltersProps> = ({ filters, onFilterChange }) =>
           <Select
             value={filters.sortOrder}
             label="Order"
-            onChange={(e) => onFilterChange('sortOrder', e.target.value as 'asc' | 'desc')}
+            onChange={(e) =>
+              onFilterChange("sortOrder", e.target.value as "asc" | "desc")
+            }
           >
             <MenuItem value="desc">Descending</MenuItem>
             <MenuItem value="asc">Ascending</MenuItem>

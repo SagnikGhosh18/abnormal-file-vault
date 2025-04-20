@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Table,
@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FileFilters from './FileFilters';
+import useDebounce from '../hooks/useDebounce';
 import axios from 'axios';
 
 interface File {
@@ -28,26 +29,37 @@ interface File {
   file_hash: string;
 }
 
+interface Filters {
+  search: string;
+  fileType: string;
+  isDuplicate: string;
+  sortBy: string;
+  sortOrder: 'asc' | 'desc';
+}
+
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const FileList: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Filters>({
     search: '',
     fileType: '',
     isDuplicate: '',
     sortBy: 'uploaded_at',
-    sortOrder: 'desc' as 'asc' | 'desc'
+    sortOrder: 'desc'
   });
 
-  const loadFiles = async () => {
+  // Debounce the search term
+  const debouncedSearch = useDebounce(filters.search, 500);
+
+  const loadFiles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (filters.search) params.append('search', filters.search);
+      if (debouncedSearch) params.append('search', debouncedSearch);
       if (filters.fileType) params.append('file_type', filters.fileType);
       if (filters.isDuplicate) params.append('is_duplicate', filters.isDuplicate);
       params.append('ordering', `${filters.sortOrder === 'desc' ? '-' : ''}${filters.sortBy}`);
@@ -60,11 +72,12 @@ const FileList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [debouncedSearch, filters.fileType, filters.isDuplicate, filters.sortBy, filters.sortOrder]);
 
+  // Effect for handling debounced search and other filter changes
   useEffect(() => {
     loadFiles();
-  }, [filters]);
+  }, [loadFiles]);
 
   const handleFilterChange = (name: string, value: string) => {
     setFilters(prev => ({ ...prev, [name]: value }));
@@ -87,14 +100,6 @@ const FileList: React.FC = () => {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
     <Box>
@@ -119,7 +124,13 @@ const FileList: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {files.length === 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  <CircularProgress size={24} />
+                </TableCell>
+              </TableRow>
+            ) : files.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Typography variant="body1" color="textSecondary">
