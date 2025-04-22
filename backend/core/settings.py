@@ -39,6 +39,7 @@ INSTALLED_APPS = [
   "django.contrib.messages",
   "django.contrib.staticfiles",
   "rest_framework",
+  "django_filters",
   "corsheaders",
   "files",
 ]
@@ -83,8 +84,12 @@ DATABASES = {
   "default": {
     "ENGINE": "django.db.backends.sqlite3",
     "NAME": os.path.join(BASE_DIR, 'data', 'db.sqlite3'),
+    "ATOMIC_REQUESTS": True,  # Ensures database transactions are atomic
   }
 }
+
+# Ensure the data directory exists
+os.makedirs(os.path.join(BASE_DIR, 'data'), exist_ok=True)
 
 
 # Password validation
@@ -136,6 +141,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # REST Framework settings
 REST_FRAMEWORK = {
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny'
     ],

@@ -18,6 +18,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import FileFilters from './FileFilters';
 import useDebounce from '../hooks/useDebounce';
 import axios from 'axios';
+import GetAppIcon from '@mui/icons-material/GetApp';
 
 interface File {
   id: string;
@@ -93,6 +94,27 @@ const FileList: React.FC = () => {
     }
   };
 
+  const handleDownload = async (id: string, filename: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/files/${id}/download/`, {
+        responseType: 'blob'
+      });
+      
+      // Create a blob URL and trigger download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Failed to download file. Please try again.');
+      console.error('Error downloading file:', err);
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -155,6 +177,14 @@ const FileList: React.FC = () => {
                     />
                   </TableCell>
                   <TableCell>
+                    <IconButton
+                      onClick={() => handleDownload(file.id, file.original_filename)}
+                      size="small"
+                      color="primary"
+                      sx={{ mr: 1 }}
+                    >
+                      <GetAppIcon />
+                    </IconButton>
                     <IconButton
                       onClick={() => handleDelete(file.id)}
                       size="small"

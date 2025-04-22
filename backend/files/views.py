@@ -9,6 +9,7 @@ from django_filters import rest_framework as django_filters
 import os
 from .models import File
 from .serializers import FileSerializer
+from django.http import HttpResponse
 
 # Create your views here.
 
@@ -47,9 +48,10 @@ class FileViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Calculate hash of the uploaded file
-        file_hash = File.calculate_sha256(file_obj)
-        file_obj.seek(0)  # Reset file pointer after hash calculation
+        # Read file content and calculate hash
+        file_content = file_obj.read()
+        file_hash = File.calculate_sha256(file_content)
+        file_obj.seek(0)  # Reset file pointer
 
         # Check if a file with this hash already exists
         existing_file = File.objects.filter(
@@ -62,14 +64,11 @@ class FileViewSet(viewsets.ModelViewSet):
             new_file = File(
                 original_filename=file_obj.name,
                 file_type=file_obj.content_type,
-                size=file_obj.size,
+                size=len(file_content),
                 file_hash=file_hash,
                 is_duplicate=True,
                 original_file=existing_file
             )
-            
-            # Set the file field to point to the existing file's path
-            new_file.file = existing_file.file
             new_file.save()
             
             serializer = self.get_serializer(new_file)
@@ -81,24 +80,42 @@ class FileViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_201_CREATED
             )
         else:
-            # No duplicate found, create new file record
-            data = {
-                'file': file_obj,
-                'original_filename': file_obj.name,
-                'file_type': file_obj.content_type,
-                'size': file_obj.size,
-            }
+            # Create new file record with content
+            new_file = File(
+                original_filename=file_obj.name,
+                file_type=file_obj.content_type,
+                size=len(file_content),
+                file_hash=file_hash,
+                is_duplicate=False,
+                file_content=file_content
+            )
+            new_file.save()
             
-            serializer = self.get_serializer(data=data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            
-            headers = self.get_success_headers(serializer.data)
+            serializer = self.get_serializer(new_file)
             return Response(
                 serializer.data, 
-                status=status.HTTP_201_CREATED, 
-                headers=headers
+                status=status.HTTP_201_CREATED
             )
+
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        """
+        Download the file content
+        """
+        file_obj = self.get_object()
+        
+        # Get the actual file content (either from this file or its original)
+        if file_obj.is_duplicate and file_obj.original_file:
+            content = file_obj.original_file.file_content
+        else:
+            content = file_obj.file_content
+
+        response = HttpResponse(
+            content,
+            content_type=file_obj.file_type
+        )
+        response['Content-Disposition'] = f'attachment; filename="{file_obj.original_filename}"'
+        return response
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -116,17 +133,13 @@ class FileViewSet(viewsets.ModelViewSet):
             # Update the new original
             new_original.is_duplicate = False
             new_original.original_file = None
+            new_original.file_content = instance.file_content
             new_original.save()
+        
+        # If this is the last copy and it's not a duplicate, delete the content
+        if not instance.is_duplicate and not instance.duplicates.exists():
+            instance.file_content = None
             
-        # If this is the last copy of the file, delete the actual file
-        if (instance.is_duplicate and not instance.original_file.duplicates.exclude(
-            id=instance.id).exists()) or (
-            not instance.is_duplicate and not instance.duplicates.exists()):
-            # Delete the actual file from storage
-            if instance.file:
-                if os.path.isfile(instance.file.path):
-                    os.remove(instance.file.path)
-                    
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'])

@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -20,6 +21,9 @@ RUN mkdir -p media staticfiles data
 
 # Set permissions
 RUN chmod -R 777 data media staticfiles
+
+# Initialize SQLite database directory
+RUN chmod -R 777 /app/data
 
 # Collect static files
 RUN python manage.py collectstatic --noinput
