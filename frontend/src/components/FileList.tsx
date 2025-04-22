@@ -12,106 +12,92 @@ import {
   Typography,
   Chip,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Pagination,
+  FormControl,
+  Select,
+  MenuItem,
+  InputLabel,
+  Stack,
+  SelectChangeEvent
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FileFilters from './FileFilters';
-import useDebounce from '../hooks/useDebounce';
-import axios from 'axios';
+import fileService, { FileData } from '../services/fileService';
 import GetAppIcon from '@mui/icons-material/GetApp';
 
-interface File {
-  id: string;
-  original_filename: string;
-  file_type: string;
-  size: number;
-  uploaded_at: string;
-  is_duplicate: boolean;
-  file_hash: string;
-}
-
-interface Filters {
-  search: string;
-  fileType: string;
-  isDuplicate: string;
-  sortBy: string;
-  sortOrder: 'asc' | 'desc';
-}
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-
 const FileList: React.FC = () => {
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>({
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [filters, setFilters] = useState({
     search: '',
     fileType: '',
     isDuplicate: '',
     sortBy: 'uploaded_at',
-    sortOrder: 'desc'
+    sortOrder: 'desc' as 'asc' | 'desc'
   });
-
-  // Debounce the search term
-  const debouncedSearch = useDebounce(filters.search, 500);
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (debouncedSearch) params.append('search', debouncedSearch);
-      if (filters.fileType) params.append('file_type', filters.fileType);
-      if (filters.isDuplicate) params.append('is_duplicate', filters.isDuplicate);
-      params.append('ordering', `${filters.sortOrder === 'desc' ? '-' : ''}${filters.sortBy}`);
-
-      const response = await axios.get(`${API_URL}/files/?${params.toString()}`);
-      setFiles(response.data);
+      const response = await fileService.getFiles({
+        search: filters.search,
+        file_type: filters.fileType,
+        is_duplicate: filters.isDuplicate ? filters.isDuplicate === 'true' : undefined,
+        ordering: `${filters.sortOrder === 'desc' ? '-' : ''}${filters.sortBy}`,
+        page,
+        page_size: pageSize
+      });
+      
+      setFiles(response.results);
+      setTotalPages(response.total_pages);
+      setTotalItems(response.count);
     } catch (err) {
-      setError('Failed to load files. Please try again later.');
-      console.error('Error loading files:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load files');
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, filters.fileType, filters.isDuplicate, filters.sortBy, filters.sortOrder]);
+  }, [filters, page, pageSize]);
 
-  // Effect for handling debounced search and other filter changes
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
 
-  const handleFilterChange = (name: string, value: string) => {
-    setFilters(prev => ({ ...prev, [name]: value }));
+  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+    setPage(value);
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await axios.delete(`${API_URL}/files/${id}/`);
-      loadFiles();
-    } catch (err) {
-      setError('Failed to delete file. Please try again.');
-      console.error('Error deleting file:', err);
-    }
+  const handlePageSizeChange = (event: SelectChangeEvent<number>) => {
+    const newPageSize = event.target.value as number;
+    setPageSize(newPageSize);
+    setPage(1);
+  };
+
+  const handleFilterChange = (name: string, value: string) => {
+    setFilters(prev => ({ ...prev, [name]: value }));
+    setPage(1); // Reset to first page when filters change
   };
 
   const handleDownload = async (id: string, filename: string) => {
     try {
-      const response = await axios.get(`${API_URL}/files/${id}/download/`, {
-        responseType: 'blob'
-      });
-      
-      // Create a blob URL and trigger download
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await fileService.downloadFile(id, filename);
     } catch (err) {
-      setError('Failed to download file. Please try again.');
-      console.error('Error downloading file:', err);
+      setError(err instanceof Error ? err.message : 'Failed to download file');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await fileService.deleteFile(id);
+      loadFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete file');
     }
   };
 
@@ -199,6 +185,36 @@ const FileList: React.FC = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>Items per page</InputLabel>
+          <Select<number>
+            value={pageSize}
+            label="Items per page"
+            onChange={handlePageSizeChange}
+          >
+            <MenuItem value={10}>10</MenuItem>
+            <MenuItem value={25}>25</MenuItem>
+            <MenuItem value={50}>50</MenuItem>
+            <MenuItem value={100}>100</MenuItem>
+          </Select>
+        </FormControl>
+
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Typography variant="body2" color="text.secondary">
+            {`${totalItems} items total`}
+          </Typography>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+            showFirstButton
+            showLastButton
+          />
+        </Stack>
+      </Box>
     </Box>
   );
 };

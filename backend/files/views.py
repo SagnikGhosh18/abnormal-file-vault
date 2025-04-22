@@ -10,6 +10,8 @@ import os
 from .models import File
 from .serializers import FileSerializer
 from django.http import HttpResponse
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
 
 # Create your views here.
 
@@ -27,9 +29,26 @@ class FileFilter(django_filters.FilterSet):
         fields = ['filename', 'file_type', 'is_duplicate', 'min_size', 'max_size', 
                  'uploaded_after', 'uploaded_before']
 
+class CustomPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        return Response({
+            'next': self.get_next_link(),
+            'previous': self.get_previous_link(),
+            'count': self.page.paginator.count,
+            'total_pages': self.page.paginator.num_pages,
+            'current_page': self.page.number,
+            'results': data
+        })
+
 class FileViewSet(viewsets.ModelViewSet):
     queryset = File.objects.all()
     serializer_class = FileSerializer
+    pagination_class = CustomPagination
+    throttle_classes = [AnonRateThrottle, UserRateThrottle]
     filter_backends = [
         django_filters.DjangoFilterBackend,
         filters.SearchFilter,
@@ -38,7 +57,7 @@ class FileViewSet(viewsets.ModelViewSet):
     filterset_class = FileFilter
     search_fields = ['original_filename']
     ordering_fields = ['uploaded_at', 'size', 'original_filename']
-    ordering = ['-uploaded_at']  # default ordering
+    ordering = ['-uploaded_at']
 
     def create(self, request, *args, **kwargs):
         file_obj = request.FILES.get('file')
