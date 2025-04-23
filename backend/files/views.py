@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.db.models import Q
+from django.db.models import Q, Sum, Count, F, ExpressionWrapper, FloatField
+from django.db.models.functions import Cast
 from django_filters import rest_framework as django_filters
 import os
 from .models import File
@@ -171,3 +172,80 @@ class FileViewSet(viewsets.ModelViewSet):
         ).distinct()
         serializer = self.get_serializer(files_with_duplicates, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def storage_metrics(self, request):
+        """Get detailed storage metrics"""
+        original_files = File.objects.filter(is_duplicate=False)
+        duplicate_files = File.objects.filter(is_duplicate=True)
+
+        # Basic counts
+        total_files = File.objects.count()
+        total_unique_files = original_files.count()
+        total_duplicates = duplicate_files.count()
+        
+        # Storage calculations
+        actual_storage = original_files.aggregate(total=Sum('size'))['total'] or 0
+        theoretical_storage = actual_storage + (duplicate_files.aggregate(total=Sum('size'))['total'] or 0)
+        storage_saved = theoretical_storage - actual_storage
+
+        # Calculate various efficiency metrics
+        deduplication_ratio = theoretical_storage / actual_storage if actual_storage > 0 else 0
+        space_savings_percentage = (storage_saved / theoretical_storage * 100) if theoretical_storage > 0 else 0
+        
+        # Calculate average duplication factor
+        files_with_duplicates = (
+            File.objects.filter(is_duplicate=False)
+            .annotate(duplicate_count=Count('duplicates'))
+            .aggregate(
+                total_duplicates=Sum('duplicate_count'),
+                file_count=Count('id')
+            )
+        )
+        avg_duplication_factor = (
+            (files_with_duplicates['total_duplicates'] or 0) / 
+            files_with_duplicates['file_count']
+            if files_with_duplicates['file_count'] > 0 else 0
+        )
+
+        # Get most duplicated files
+        top_duplicated = (
+            File.objects.filter(is_duplicate=False)
+            .annotate(
+                duplicate_count=Count('duplicates'),
+                total_size_saved=F('size') * F('duplicate_count'),
+                duplication_factor=Cast('duplicate_count', FloatField()) + 1
+            )
+            .filter(duplicate_count__gt=0)
+            .order_by('-duplicate_count')
+            .values(
+                'original_filename',
+                'size',
+                'duplicate_count',
+                'total_size_saved',
+                'duplication_factor'
+            )[:5]
+        )
+
+        return Response({
+            'summary_metrics': {
+                'total_files': total_files,
+                'unique_files': total_unique_files,
+                'duplicate_files': total_duplicates,
+                'actual_storage_bytes': actual_storage,
+                'theoretical_storage_bytes': theoretical_storage,
+                'storage_saved_bytes': storage_saved,
+            },
+            'efficiency_metrics': {
+                'deduplication_ratio': round(deduplication_ratio, 2),  # Higher is better
+                'space_savings_percentage': round(space_savings_percentage, 2),  # Higher is better
+                'average_duplication_factor': round(avg_duplication_factor, 2),  # Average copies per file
+            },
+            'duplicate_statistics': [
+                {
+                    **stat,
+                    'efficiency_gain': round((stat['duplication_factor'] - 1) / stat['duplication_factor'] * 100, 2)
+                }
+                for stat in top_duplicated
+            ]
+        })

@@ -3,6 +3,7 @@ import { Container, Typography, Box, CssBaseline } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import FileUpload from './components/FileUpload';
 import FileList from './components/FileList';
+import StorageMetrics from './components/StorageMetrics';
 
 const theme = createTheme({
   palette: {
@@ -19,6 +20,7 @@ function App() {
           <Typography variant="h4" component="h1" gutterBottom>
             File Hub
           </Typography>
+          <StorageMetrics />
           <FileUpload onUploadComplete={() => window.location.reload()} />
           <Box sx={{ mt: 4 }}>
             <FileList />

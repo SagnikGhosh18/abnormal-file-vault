@@ -31,6 +31,29 @@ export interface FileFilter {
     page_size?: number;
 }
 
+interface StorageMetrics {
+    summary_metrics: {
+        total_files: number;
+        unique_files: number;
+        duplicate_files: number;
+        actual_storage_bytes: number;
+        theoretical_storage_bytes: number;
+        storage_saved_bytes: number;
+    };
+    efficiency_metrics: {
+        deduplication_ratio: number;
+        space_savings_percentage: number;
+        average_duplication_factor: number;
+    };
+    duplicate_statistics: Array<{
+        original_filename: string;
+        size: number;
+        duplicate_count: number;
+        total_size_saved: number;
+        efficiency_gain: number;
+    }>;
+}
+
 // Create axios instance with default config
 const axiosInstance = axios.create({
     baseURL: API_URL,
@@ -124,6 +147,15 @@ const fileService = {
         }
         
         return range;
+    },
+
+    async getStorageMetrics(): Promise<StorageMetrics> {
+        try {
+            const response = await axiosInstance.get<StorageMetrics>('/files/storage_metrics/');
+            return response.data;
+        } catch (error) {
+            throw new Error('Error fetching storage metrics');
+        }
     }
 };
 
