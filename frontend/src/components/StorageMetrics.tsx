@@ -13,7 +13,6 @@ import {
     Paper,
     Tooltip
 } from '@mui/material';
-import { PieChart } from 'recharts';
 import InfoIcon from '@mui/icons-material/Info';
 import fileService from '../services/fileService';
 
@@ -24,11 +23,11 @@ interface StorageMetrics {
         duplicate_files: number;
         actual_storage_bytes: number;
         theoretical_storage_bytes: number;
-        storage_saved_bytes: number;
+        original_storage_bytes: number;
     };
     efficiency_metrics: {
-        deduplication_ratio: number;
-        space_savings_percentage: number;
+        originality_percentage: number;
+        storage_efficiency: number;
         average_duplication_factor: number;
     };
     duplicate_statistics: Array<{
@@ -36,7 +35,7 @@ interface StorageMetrics {
         size: number;
         duplicate_count: number;
         total_size_saved: number;
-        efficiency_gain: number;
+        originality_percentage: number;
     }>;
 }
 
@@ -74,7 +73,7 @@ const StorageMetrics: React.FC = () => {
 
     const pieData = [
         { name: 'Actual Storage', value: metrics.summary_metrics.actual_storage_bytes },
-        { name: 'Saved Storage', value: metrics.summary_metrics.storage_saved_bytes }
+        { name: 'Saved Storage', value: metrics.summary_metrics.original_storage_bytes - metrics.summary_metrics.actual_storage_bytes }
     ];
 
     return (
@@ -86,13 +85,13 @@ const StorageMetrics: React.FC = () => {
                             <Typography variant="h6" gutterBottom>
                                 Storage Efficiency
                             </Typography>
-                            <Box sx={{ position: 'relative', display: 'inline-flex', mb: 2 }}>
+                            <Box sx={{ position: 'relative', display: 'inline-flex', mb: '40px' }}>
                                 <CircularProgress
                                     variant="determinate"
-                                    value={metrics.efficiency_metrics.space_savings_percentage}
+                                    value={metrics.efficiency_metrics.originality_percentage}
                                     size={80}
                                     thickness={4}
-                                    color="success"
+                                    color="primary"
                                 />
                                 <Box
                                     sx={{
@@ -107,34 +106,34 @@ const StorageMetrics: React.FC = () => {
                                     }}
                                 >
                                     <Typography variant="caption" component="div">
-                                        {`${Math.round(metrics.efficiency_metrics.space_savings_percentage)}%`}
+                                        {`${Math.round(metrics.efficiency_metrics.originality_percentage)}%`}
                                     </Typography>
                                 </Box>
                             </Box>
-                            <List dense>
+                            <List dense sx={{display: 'flex', flexDirection: 'row', gap: 1}}>
                                 <ListItem>
-                                    <Tooltip title="How many times smaller the actual storage is compared to storing every file separately">
+                                    <Tooltip title="Percentage of total files that are originals">
                                         <ListItemText
                                             primary={
                                                 <Box display="flex" alignItems="center">
-                                                    Deduplication Ratio
+                                                    Originality
                                                     <InfoIcon fontSize="small" sx={{ ml: 1 }} />
                                                 </Box>
                                             }
-                                            secondary={`${metrics.efficiency_metrics.deduplication_ratio}:1`}
+                                            secondary={`${metrics.efficiency_metrics.originality_percentage}%`}
                                         />
                                     </Tooltip>
                                 </ListItem>
                                 <ListItem>
-                                    <Tooltip title="Average number of times each unique file appears">
+                                    <Tooltip title="Percentage of storage used by original files">
                                         <ListItemText
                                             primary={
                                                 <Box display="flex" alignItems="center">
-                                                    Avg. Duplication Factor
+                                                    Efficiency
                                                     <InfoIcon fontSize="small" sx={{ ml: 1 }} />
                                                 </Box>
                                             }
-                                            secondary={metrics.efficiency_metrics.average_duplication_factor}
+                                            secondary={`${metrics.efficiency_metrics.storage_efficiency}%`}
                                         />
                                     </Tooltip>
                                 </ListItem>
@@ -158,8 +157,8 @@ const StorageMetrics: React.FC = () => {
                                 </ListItem>
                                 <ListItem>
                                     <ListItemText
-                                        primary="Storage Saved"
-                                        secondary={formatBytes(metrics.summary_metrics.storage_saved_bytes)}
+                                        primary="Saved Storage"
+                                        secondary={formatBytes(metrics.summary_metrics.original_storage_bytes - metrics.summary_metrics.actual_storage_bytes)}
                                     />
                                 </ListItem>
                                 <ListItem>
@@ -219,10 +218,10 @@ const StorageMetrics: React.FC = () => {
                                                     secondary={
                                                         <>
                                                             <Typography variant="body2">
-                                                                {`${stat.duplicate_count} duplicates • ${formatBytes(stat.total_size_saved)} saved`}
+                                                                {`${stat.duplicate_count} duplicates • ${formatBytes(stat.total_size_saved)} total`}
                                                             </Typography>
-                                                            <Typography variant="body2" color="success.main">
-                                                                {`${stat.efficiency_gain}% storage efficiency`}
+                                                            <Typography variant="body2" color="primary.main">
+                                                                {`${stat.originality_percentage}% originality`}
                                                             </Typography>
                                                         </>
                                                     }

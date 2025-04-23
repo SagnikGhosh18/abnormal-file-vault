@@ -19,7 +19,12 @@ import {
   MenuItem,
   InputLabel,
   Stack,
-  SelectChangeEvent
+  SelectChangeEvent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FileFilters from './FileFilters';
@@ -34,6 +39,8 @@ const FileList: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
   const [filters, setFilters] = useState({
     search: '',
     fileType: '',
@@ -81,7 +88,7 @@ const FileList: React.FC = () => {
 
   const handleFilterChange = (name: string, value: string) => {
     setFilters(prev => ({ ...prev, [name]: value }));
-    setPage(1); // Reset to first page when filters change
+    setPage(1);
   };
 
   const handleDownload = async (id: string, filename: string) => {
@@ -92,13 +99,27 @@ const FileList: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteClick = (id: string, filename: string) => {
+    setFileToDelete({ id, name: filename });
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!fileToDelete) return;
+    
     try {
-      await fileService.deleteFile(id);
+      await fileService.deleteFile(fileToDelete.id);
       loadFiles();
+      setDeleteDialogOpen(false);
+      setFileToDelete(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete file');
     }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setFileToDelete(null);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -172,7 +193,7 @@ const FileList: React.FC = () => {
                       <GetAppIcon />
                     </IconButton>
                     <IconButton
-                      onClick={() => handleDelete(file.id)}
+                      onClick={() => handleDeleteClick(file.id, file.original_filename)}
                       size="small"
                       color="error"
                     >
@@ -215,6 +236,28 @@ const FileList: React.FC = () => {
           />
         </Stack>
       </Box>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirm Delete
+        </DialogTitle>
+        <DialogContent id="delete-dialog-description">
+          Are you sure you want to delete "{fileToDelete?.name}"?
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" autoFocus>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

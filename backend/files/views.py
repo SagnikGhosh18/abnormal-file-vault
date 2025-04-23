@@ -187,11 +187,10 @@ class FileViewSet(viewsets.ModelViewSet):
         # Storage calculations
         actual_storage = original_files.aggregate(total=Sum('size'))['total'] or 0
         theoretical_storage = actual_storage + (duplicate_files.aggregate(total=Sum('size'))['total'] or 0)
-        storage_saved = theoretical_storage - actual_storage
-
-        # Calculate various efficiency metrics
-        deduplication_ratio = theoretical_storage / actual_storage if actual_storage > 0 else 0
-        space_savings_percentage = (storage_saved / theoretical_storage * 100) if theoretical_storage > 0 else 0
+        
+        # Calculate originality metrics
+        originality_percentage = (total_unique_files / total_files * 100) if total_files > 0 else 100
+        storage_efficiency = (actual_storage / theoretical_storage * 100) if theoretical_storage > 0 else 100
         
         # Calculate average duplication factor
         files_with_duplicates = (
@@ -214,7 +213,7 @@ class FileViewSet(viewsets.ModelViewSet):
             .annotate(
                 duplicate_count=Count('duplicates'),
                 total_size_saved=F('size') * F('duplicate_count'),
-                duplication_factor=Cast('duplicate_count', FloatField()) + 1
+                originality_factor=Cast(1, FloatField()) / (Cast('duplicate_count', FloatField()) + 1)
             )
             .filter(duplicate_count__gt=0)
             .order_by('-duplicate_count')
@@ -223,7 +222,7 @@ class FileViewSet(viewsets.ModelViewSet):
                 'size',
                 'duplicate_count',
                 'total_size_saved',
-                'duplication_factor'
+                'originality_factor'
             )[:5]
         )
 
@@ -234,17 +233,17 @@ class FileViewSet(viewsets.ModelViewSet):
                 'duplicate_files': total_duplicates,
                 'actual_storage_bytes': actual_storage,
                 'theoretical_storage_bytes': theoretical_storage,
-                'storage_saved_bytes': storage_saved,
+                'original_storage_bytes': actual_storage,
             },
             'efficiency_metrics': {
-                'deduplication_ratio': round(deduplication_ratio, 2),  # Higher is better
-                'space_savings_percentage': round(space_savings_percentage, 2),  # Higher is better
-                'average_duplication_factor': round(avg_duplication_factor, 2),  # Average copies per file
+                'originality_percentage': round(originality_percentage, 2),  # Percentage of files that are original
+                'storage_efficiency': round(storage_efficiency, 2),  # Percentage of storage used by original files
+                'average_duplication_factor': round(avg_duplication_factor + 1, 2),  # Average copies per file (including original)
             },
             'duplicate_statistics': [
                 {
                     **stat,
-                    'efficiency_gain': round((stat['duplication_factor'] - 1) / stat['duplication_factor'] * 100, 2)
+                    'originality_percentage': round(stat['originality_factor'] * 100, 2)
                 }
                 for stat in top_duplicated
             ]

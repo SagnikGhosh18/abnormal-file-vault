@@ -31,18 +31,18 @@ export interface FileFilter {
     page_size?: number;
 }
 
-interface StorageMetrics {
+export interface StorageMetrics {
     summary_metrics: {
         total_files: number;
         unique_files: number;
         duplicate_files: number;
         actual_storage_bytes: number;
         theoretical_storage_bytes: number;
-        storage_saved_bytes: number;
+        original_storage_bytes: number;
     };
     efficiency_metrics: {
-        deduplication_ratio: number;
-        space_savings_percentage: number;
+        originality_percentage: number;
+        storage_efficiency: number;
         average_duplication_factor: number;
     };
     duplicate_statistics: Array<{
@@ -50,7 +50,7 @@ interface StorageMetrics {
         size: number;
         duplicate_count: number;
         total_size_saved: number;
-        efficiency_gain: number;
+        originality_percentage: number;
     }>;
 }
 
