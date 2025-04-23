@@ -13,8 +13,15 @@ from .serializers import FileSerializer
 from django.http import HttpResponse
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from django.core.cache import cache
+from .cache import FileListCache
+from django.conf import settings
+import json
+import logging
 
 # Create your views here.
+
+logger = logging.getLogger(__name__)
 
 class FileFilter(django_filters.FilterSet):
     filename = django_filters.CharFilter(field_name='original_filename', lookup_expr='icontains')
@@ -60,62 +67,66 @@ class FileViewSet(viewsets.ModelViewSet):
     ordering_fields = ['uploaded_at', 'size', 'original_filename']
     ordering = ['-uploaded_at']
 
+    def list(self, request, *args, **kwargs):
+        # Extract all query parameters
+        filters = {
+            'search': request.query_params.get('search', ''),
+            'file_type': request.query_params.get('file_type', ''),
+            'is_duplicate': request.query_params.get('is_duplicate'),
+            'min_size': request.query_params.get('min_size'),
+            'max_size': request.query_params.get('max_size'),
+            'uploaded_after': request.query_params.get('uploaded_after'),
+            'uploaded_before': request.query_params.get('uploaded_before'),
+        }
+        
+        # Get pagination parameters
+        page = self.paginator.get_page_number(request, self.paginator)
+        page_size = request.query_params.get('page_size', self.pagination_class.page_size)
+        
+        # Get ordering
+        ordering = request.query_params.get('ordering', '-uploaded_at')
+
+        # Generate cache key
+        cache_key = FileListCache.generate_cache_key(filters, page, page_size, ordering)
+        logger.info(f"Generated cache key: {cache_key}")
+        
+        # Try to get data from cache
+        cached_data = FileListCache.get_cached_data(cache_key)
+        if cached_data is not None:
+            logger.info(f"Cache hit for key: {cache_key}")
+            return Response(cached_data)
+
+        logger.info(f"Cache miss for key: {cache_key}")
+        # If not in cache, get from database
+        response = super().list(request, *args, **kwargs)
+        
+        # Store in cache
+        try:
+            FileListCache.set_cached_data(cache_key, response.data)
+            logger.info(f"Successfully stored data in cache with key: {cache_key}")
+            
+            # Verify the data was stored
+            verification = FileListCache.get_cached_data(cache_key)
+            if verification is not None:
+                logger.info("Cache verification successful")
+            else:
+                logger.error("Cache verification failed - data not stored")
+        except Exception as e:
+            logger.error(f"Error storing data in cache: {str(e)}")
+        
+        return response
+
     def create(self, request, *args, **kwargs):
-        file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response(
-                {'error': 'No file provided'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        response = super().create(request, *args, **kwargs)
+        # Invalidate the file list cache when a new file is created
+        cache.delete_pattern("file_list:*")
+        return response
 
-        # Read file content and calculate hash
-        file_content = file_obj.read()
-        file_hash = File.calculate_sha256(file_content)
-        file_obj.seek(0)  # Reset file pointer
-
-        # Check if a file with this hash already exists
-        existing_file = File.objects.filter(
-            Q(file_hash=file_hash, is_duplicate=False) | 
-            Q(file_hash=file_hash, original_file__isnull=True)
-        ).first()
-
-        if existing_file:
-            # Create a new file record that points to the existing file
-            new_file = File(
-                original_filename=file_obj.name,
-                file_type=file_obj.content_type,
-                size=len(file_content),
-                file_hash=file_hash,
-                is_duplicate=True,
-                original_file=existing_file
-            )
-            new_file.save()
-            
-            serializer = self.get_serializer(new_file)
-            return Response(
-                {
-                    **serializer.data,
-                    'message': 'File already exists. Created reference to existing file.'
-                },
-                status=status.HTTP_201_CREATED
-            )
-        else:
-            # Create new file record with content
-            new_file = File(
-                original_filename=file_obj.name,
-                file_type=file_obj.content_type,
-                size=len(file_content),
-                file_hash=file_hash,
-                is_duplicate=False,
-                file_content=file_content
-            )
-            new_file.save()
-            
-            serializer = self.get_serializer(new_file)
-            return Response(
-                serializer.data, 
-                status=status.HTTP_201_CREATED
-            )
+    def destroy(self, request, *args, **kwargs):
+        response = super().destroy(request, *args, **kwargs)
+        # Invalidate the file list cache when a file is deleted
+        cache.delete_pattern("file_list:*")
+        return response
 
     @action(detail=True, methods=['get'])
     def download(self, request, pk=None):
@@ -137,31 +148,6 @@ class FileViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="{file_obj.original_filename}"'
         return response
 
-    def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        
-        # Check if this is the original file and has duplicates
-        if not instance.is_duplicate and instance.duplicates.exists():
-            # Find the oldest duplicate to become the new original
-            new_original = instance.duplicates.order_by('uploaded_at').first()
-            
-            # Update all other duplicates to point to the new original
-            instance.duplicates.exclude(id=new_original.id).update(
-                original_file=new_original
-            )
-            
-            # Update the new original
-            new_original.is_duplicate = False
-            new_original.original_file = None
-            new_original.file_content = instance.file_content
-            new_original.save()
-        
-        # If this is the last copy and it's not a duplicate, delete the content
-        if not instance.is_duplicate and not instance.duplicates.exists():
-            instance.file_content = None
-            
-        return super().destroy(request, *args, **kwargs)
-
     @action(detail=False, methods=['get'])
     def duplicates(self, request):
         """
@@ -176,6 +162,13 @@ class FileViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def storage_metrics(self, request):
         """Get detailed storage metrics"""
+        # Try to get from cache
+        cache_key = "storage_metrics"
+        cached_data = cache.get(cache_key)
+        if cached_data is not None:
+            return Response(cached_data)
+
+        # If not in cache, calculate metrics
         original_files = File.objects.filter(is_duplicate=False)
         duplicate_files = File.objects.filter(is_duplicate=True)
 
@@ -226,7 +219,7 @@ class FileViewSet(viewsets.ModelViewSet):
             )[:5]
         )
 
-        return Response({
+        response_data = {
             'summary_metrics': {
                 'total_files': total_files,
                 'unique_files': total_unique_files,
@@ -247,4 +240,43 @@ class FileViewSet(viewsets.ModelViewSet):
                 }
                 for stat in top_duplicated
             ]
-        })
+        }
+
+        # Store in cache
+        cache.set(cache_key, response_data, timeout=settings.CACHE_TTL)
+
+        return Response(response_data)
+
+    @action(detail=False, methods=['get'])
+    def test_cache(self, request):
+        """Test endpoint to verify Redis cache functionality"""
+        test_key = "test_cache_key"
+        test_data = {"test": "data"}
+        
+        try:
+            # Try to store data
+            cache.set(test_key, test_data, timeout=300)
+            logger.info("Successfully stored test data in cache")
+            
+            # Try to retrieve data
+            retrieved_data = cache.get(test_key)
+            if retrieved_data == test_data:
+                logger.info("Successfully retrieved test data from cache")
+                return Response({
+                    "status": "success",
+                    "message": "Cache is working correctly",
+                    "data": retrieved_data
+                })
+            else:
+                logger.error("Retrieved data doesn't match stored data")
+                return Response({
+                    "status": "error",
+                    "message": "Cache retrieval verification failed"
+                }, status=500)
+            
+        except Exception as e:
+            logger.error(f"Cache test failed: {str(e)}")
+            return Response({
+                "status": "error",
+                "message": f"Cache test failed: {str(e)}"
+            }, status=500)
